@@ -1,7 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use fory_core::Fory;
-use fory_derive::ForyObject;
-use server::handler::request_handler::{PrintTestReq, PrintTestRes};
+use server::share::model::{PrintTestReq, PrintTestRes};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -26,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let payload = fory.serialize(&req)?;
     let length = (4 + 4 + payload.len()) as u32;
 
-    let mut buf = BytesMut::with_capacity(4 + length as usize);
+    let mut buf = BytesMut::with_capacity(12 + length as usize);
     buf.put_u32(length);
     buf.put_u32(request_id);
     buf.put_u32(func_id);

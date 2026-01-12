@@ -1,47 +1,46 @@
-use bytes::{Buf, Bytes, BytesMut};
-use fory::{Fory, ForyObject};
+use crate::share::model::{PrintTestReq, PrintTestRes};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use fory::Fory;
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
-struct Decoder {
-    request_id: u32,
-    func_id: u32,
-    data: Bytes,
-}
+type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
+static HANDLER_TABLE: &[HandlerEntry] = &[
+    (1, || Box::new(RpcMethod { func: print_test })),
+    (1, || Box::new(RpcMethod { func: print_test })),
+];
 
 pub async fn hand(
     mut socket: TcpStream,
     addr: SocketAddr,
     mut package: BytesMut,
+    fory: Arc<Fory>,
 ) -> Result<(), ()> {
     //回显消息,同样添加4 byte的长度头
-    let request_id = u32::from_be_bytes([package[0], package[1], package[2], package[3]]);
-    let func_id = u32::from_be_bytes([package[4], package[5], package[6], package[7]]);
+    let request_id = u32::from_be_bytes(package[0..4].try_into().unwrap());
+    let func_id = u32::from_be_bytes(package[4..8].try_into().unwrap());
     package.advance(8);
-    let decoder = Decoder {
-        request_id,
-        func_id,
-        data: package.freeze(),
-    };
-    let response_data = if decoder.func_id == 1 {
-        let mut fory = Fory::default();
-        fory.register::<PrintTestReq>(1).unwrap();
-        fory.register::<PrintTestRes>(2).unwrap();
-        let req: PrintTestReq = fory.deserialize(decoder.data.as_ref()).unwrap();
-        let res = print_test(req);
-        fory.serialize(&res).unwrap()
-    } else {
-        return Err(());
-    };
+
+    let handler = HANDLER_TABLE
+        .iter()
+        .find(|(id, _)| *id == func_id)
+        .map(|(_, ctor)| ctor())
+        .ok_or(())?;
+
+    // let handler = handlers.get(&func_id).ok_or(())?;
+    let response_data = handler.call(&fory, package.freeze());
+
     let mut response_length = response_data.len() as u32;
     response_length = response_length + 4;
-    if let Err(e) = socket.write_all(&response_length.to_be_bytes()).await {
-        eprintln!("发送响应长度头失败 ({}): {}", addr, e);
-        return Err(());
-    }
-    if let Err(e) = socket.write_all(&decoder.request_id.to_be_bytes()).await {
-        eprintln!("发送响应长度头失败 ({}): {}", addr, e);
+
+    let mut response_header = BytesMut::with_capacity(8);
+    response_header.put_u32(response_length);
+    response_header.put_u32(request_id);
+    if let Err(e) = socket.write_all(&response_header).await {
+        eprintln!("发送响应头失败 ({}): {}", addr, e);
         return Err(());
     }
     if let Err(e) = socket.write_all(&*response_data).await {
@@ -51,22 +50,23 @@ pub async fn hand(
     Ok(())
 }
 
-//每个方法和结构体 绑定一个数字
-pub struct Request<T, U> {
-    request_id: u32,
-    req_data: Box<T>,
-    res_data: Box<U>,
-    func: fn(Box<T>) -> (Box<U>),
+trait RpcHandler: Send + Sync {
+    fn call(&self, fory: &Fory, data: Bytes) -> Bytes;
+}
+struct RpcMethod<Req, Res> {
+    func: fn(Req) -> Res,
 }
 
-#[derive(ForyObject, Debug, PartialEq)]
-pub struct PrintTestReq {
-    pub message: String,
-}
-
-#[derive(ForyObject, Debug, PartialEq)]
-pub struct PrintTestRes {
-    pub message: String,
+impl<Req, Res> RpcHandler for RpcMethod<Req, Res>
+where
+    Req: Send + 'static + fory::ForyDefault + fory::Serializer,
+    Res: Send + 'static + fory::Serializer,
+{
+    fn call(&self, fory: &Fory, data: Bytes) -> Bytes {
+        let req: Req = fory.deserialize(data.as_ref()).unwrap();
+        let res = (self.func)(req);
+        fory.serialize(&res).unwrap().into()
+    }
 }
 
 fn print_test(d: PrintTestReq) -> PrintTestRes {
