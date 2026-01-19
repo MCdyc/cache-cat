@@ -10,7 +10,7 @@ openraft::declare_raft_types!(
         R = Response,
         Entry = openraft::Entry<TypeConfig>,
 );
-pub type LogStore = crate::store::log::LogStore<TypeConfig>;
+pub type LogStore = crate::store::log::LogStore;
 pub type StateMachineStore = crate::store::state_machine::StateMachineStore<TypeConfig>;
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_id = 1;

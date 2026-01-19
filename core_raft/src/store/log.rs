@@ -7,6 +7,7 @@ use std::io;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 
+use crate::network::raft::TypeConfig;
 use futures::lock::Mutex;
 use openraft::LogState;
 use openraft::RaftTypeConfig;
@@ -17,26 +18,26 @@ use openraft::storage::IOFlushed;
 
 /// RaftLogStore implementation with a in-memory storage
 #[derive(Debug, Clone, Default)]
-pub struct LogStore<C: RaftTypeConfig> {
-    inner: Arc<Mutex<LogStoreInner<C>>>,
+pub struct LogStore {
+    inner: Arc<Mutex<LogStoreInner>>,
 }
 
 #[derive(Debug)]
-pub struct LogStoreInner<C: RaftTypeConfig> {
+pub struct LogStoreInner {
     /// The last purged log id.
-    last_purged_log_id: Option<LogIdOf<C>>,
+    last_purged_log_id: Option<LogIdOf<TypeConfig>>,
 
     /// The Raft log.
-    log: BTreeMap<u64, C::Entry>,
+    log: BTreeMap<u64, <TypeConfig as RaftTypeConfig>::Entry>,
 
     /// The commit log id.
-    committed: Option<LogIdOf<C>>,
+    committed: Option<LogIdOf<TypeConfig>>,
 
     /// The current granted vote.
-    vote: Option<VoteOf<C>>,
+    vote: Option<VoteOf<TypeConfig>>,
 }
 
-impl<C: RaftTypeConfig> Default for LogStoreInner<C> {
+impl Default for LogStoreInner {
     fn default() -> Self {
         Self {
             last_purged_log_id: None,
@@ -47,14 +48,11 @@ impl<C: RaftTypeConfig> Default for LogStoreInner<C> {
     }
 }
 
-impl<C: RaftTypeConfig> LogStoreInner<C> {
+impl LogStoreInner {
     async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug>(
         &mut self,
         range: RB,
-    ) -> Result<Vec<C::Entry>, io::Error>
-    where
-        C::Entry: Clone,
-    {
+    ) -> Result<Vec<<TypeConfig as RaftTypeConfig>::Entry>, io::Error> {
         let response = self
             .log
             .range(range.clone())
@@ -63,7 +61,7 @@ impl<C: RaftTypeConfig> LogStoreInner<C> {
         Ok(response)
     }
 
-    async fn get_log_state(&mut self) -> Result<LogState<C>, io::Error> {
+    async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, io::Error> {
         let last = self.log.iter().next_back().map(|(_, ent)| ent.log_id());
 
         let last_purged = self.last_purged_log_id.clone();
@@ -79,27 +77,34 @@ impl<C: RaftTypeConfig> LogStoreInner<C> {
         })
     }
 
-    async fn save_committed(&mut self, committed: Option<LogIdOf<C>>) -> Result<(), io::Error> {
+    async fn save_committed(
+        &mut self,
+        committed: Option<LogIdOf<TypeConfig>>,
+    ) -> Result<(), io::Error> {
         self.committed = committed;
         Ok(())
     }
 
-    async fn read_committed(&mut self) -> Result<Option<LogIdOf<C>>, io::Error> {
+    async fn read_committed(&mut self) -> Result<Option<LogIdOf<TypeConfig>>, io::Error> {
         Ok(self.committed.clone())
     }
 
-    async fn save_vote(&mut self, vote: &VoteOf<C>) -> Result<(), io::Error> {
+    async fn save_vote(&mut self, vote: &VoteOf<TypeConfig>) -> Result<(), io::Error> {
         self.vote = Some(vote.clone());
         Ok(())
     }
 
-    async fn read_vote(&mut self) -> Result<Option<VoteOf<C>>, io::Error> {
+    async fn read_vote(&mut self) -> Result<Option<VoteOf<TypeConfig>>, io::Error> {
         Ok(self.vote.clone())
     }
 
-    async fn append<I>(&mut self, entries: I, callback: IOFlushed<C>) -> Result<(), io::Error>
+    async fn append<I>(
+        &mut self,
+        entries: I,
+        callback: IOFlushed<TypeConfig>,
+    ) -> Result<(), io::Error>
     where
-        I: IntoIterator<Item = C::Entry>,
+        I: IntoIterator<Item = <TypeConfig as RaftTypeConfig>::Entry>,
     {
         // Simple implementation that calls the flush-before-return `append_to_log`.
         for entry in entries {
@@ -110,7 +115,10 @@ impl<C: RaftTypeConfig> LogStoreInner<C> {
         Ok(())
     }
 
-    async fn truncate_after(&mut self, last_log_id: Option<LogIdOf<C>>) -> Result<(), io::Error> {
+    async fn truncate_after(
+        &mut self,
+        last_log_id: Option<LogIdOf<TypeConfig>>,
+    ) -> Result<(), io::Error> {
         let start_index = match last_log_id {
             Some(log_id) => log_id.index() + 1,
             None => 0,
@@ -128,7 +136,7 @@ impl<C: RaftTypeConfig> LogStoreInner<C> {
         Ok(())
     }
 
-    async fn purge(&mut self, log_id: LogIdOf<C>) -> Result<(), io::Error> {
+    async fn purge(&mut self, log_id: LogIdOf<TypeConfig>) -> Result<(), io::Error> {
         {
             let ld = &mut self.last_purged_log_id;
             assert!(ld.as_ref() <= Some(&log_id));
@@ -165,25 +173,22 @@ mod impl_log_store {
     use openraft::storage::IOFlushed;
     use openraft::storage::RaftLogStorage;
 
-    impl<C: RaftTypeConfig> RaftLogReader<C> for LogStore<C>
-    where
-        C::Entry: Clone,
-    {
+    impl RaftLogReader<TypeConfig> for LogStore {
         async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug>(
             &mut self,
             range: RB,
-        ) -> Result<Vec<C::Entry>, io::Error> {
+        ) -> Result<Vec<<TypeConfig as RaftTypeConfig>::Entry>, io::Error> {
             let mut inner = self.inner.lock().await;
             inner.try_get_log_entries(range).await
         }
 
-        async fn read_vote(&mut self) -> Result<Option<VoteOf<C>>, io::Error> {
+        async fn read_vote(&mut self) -> Result<Option<VoteOf<TypeConfig>>, io::Error> {
             let mut inner = self.inner.lock().await;
             inner.read_vote().await
         }
     }
 
-    impl RaftLogStorage<TypeConfig> for LogStore<TypeConfig> {
+    impl RaftLogStorage<TypeConfig> for LogStore {
         type LogReader = Self;
 
         async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, io::Error> {
