@@ -1,5 +1,9 @@
+use crate::network::raft::TypeConfig;
+use openraft::alias::VoteOf;
+use openraft::{Snapshot, SnapshotMeta};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::io::Cursor;
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -64,4 +68,9 @@ pub struct ExistsRes {
     pub num: u32,
 }
 
-
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct InstallFullSnapshotReq {
+    pub vote: VoteOf<TypeConfig>,
+    pub snapshot_meta: SnapshotMeta<TypeConfig>,
+    pub snapshot: Vec<u8>,
+}

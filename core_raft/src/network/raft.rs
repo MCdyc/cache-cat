@@ -1,10 +1,8 @@
 use crate::network::model::{Request, Response};
 use crate::network::network::NetworkFactory;
 use crate::server::handler::rpc;
-use futures::lock::Mutex;
 use openraft::Config;
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::io::Cursor;
 use std::sync::Arc;
 
 openraft::declare_raft_types!(
@@ -13,13 +11,18 @@ openraft::declare_raft_types!(
         D = Request,
         R = Response,
         Entry = openraft::Entry<TypeConfig>,
+        SnapshotData = Cursor<Vec<u8>>,
 );
 pub type Raft = openraft::Raft<TypeConfig>;
+//实现是纯内存的暂时
 pub type LogStore = crate::store::log::LogStore;
 pub type StateMachineStore = crate::store::state_machine::StateMachineStore<TypeConfig>;
-pub async fn main(node_id: u64, addr: String) -> Result<(), Box<dyn std::error::Error>> {
-    let node_id = 1;
-    let config = Arc::new(Config::default().validate()?);
+pub async fn start_raft_app(node_id: u64, addr: String) -> std::io::Result<()> {
+    let config = Arc::new(Config {
+        heartbeat_interval: 250,
+        election_timeout_min: 299,
+        ..Default::default()
+    });
     let log_store = LogStore::default();
     let state_machine_store = StateMachineStore::default();
     //客户端网络
@@ -32,7 +35,8 @@ pub async fn main(node_id: u64, addr: String) -> Result<(), Box<dyn std::error::
         log_store,
         state_machine_store.clone(),
     )
-    .await?;
+    .await
+    .unwrap();
     let app = CacheCatApp {
         id: node_id,
         addr: addr.clone(),
@@ -40,8 +44,7 @@ pub async fn main(node_id: u64, addr: String) -> Result<(), Box<dyn std::error::
         config,
     };
     //服务端网络
-    rpc::start_server(Arc::new(app)).await?;
-    Ok(())
+    rpc::start_server(Arc::new(app)).await
 }
 pub struct CacheCatApp {
     pub id: u64,

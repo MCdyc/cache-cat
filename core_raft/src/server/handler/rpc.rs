@@ -8,14 +8,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-pub async fn start_server(app: Arc<CacheCatApp>) -> Result<(), Box<dyn std::error::Error>> {
-    init_config("./server/config.yml")?;
+pub async fn start_server(app: Arc<CacheCatApp>) -> std::io::Result<()> {
+    init_config("./server/config.yml");
     init_cache();
     let config = get_config();
     let addr = format!("127.0.0.1:{}", config.port);
-    let listener = TcpListener::bind(addr).await?;
+    let listener = TcpListener::bind(app.addr.clone()).await?;
     println!("Listening on: {}", listener.local_addr()?);
-
     loop {
         let Ok((socket, addr)) = listener.accept().await else {
             eprintln!("接受连接失败");

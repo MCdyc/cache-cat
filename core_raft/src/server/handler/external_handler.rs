@@ -1,15 +1,17 @@
 use crate::network::raft::{CacheCatApp, TypeConfig};
 use crate::server::core::moka::{MyValue, get_cache};
 use crate::server::handler::model::{
-    DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq,
-    SetRes,
+    DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, InstallFullSnapshotReq, PrintTestReq,
+    PrintTestRes, SetReq, SetRes,
 };
+use async_trait::async_trait;
 use bytes::Bytes;
-use openraft::raft::{VoteRequest, VoteResponse};
+use openraft::Snapshot;
+use openraft::raft::{AppendEntriesRequest, InstallSnapshotRequest, VoteRequest, VoteResponse};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::io::Cursor;
 use std::sync::Arc;
-use async_trait::async_trait; // 需要在 Cargo.toml 中添加 async-trait = "0.1"
 
 pub type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
 
@@ -20,6 +22,16 @@ pub static HANDLER_TABLE: &[HandlerEntry] = &[
     (4, || Box::new(RpcMethod { func: del })),
     (5, || Box::new(RpcMethod { func: exists })),
     (6, || Box::new(RpcMethod { func: vote })),
+    (7, || {
+        Box::new(RpcMethod {
+            func: append_entries,
+        })
+    }),
+    (8, || {
+        Box::new(RpcMethod {
+            func: install_full_snapshot,
+        })
+    }),
 ];
 
 #[async_trait]
@@ -99,8 +111,27 @@ async fn exists(_app: Arc<CacheCatApp>, req: ExistsReq) -> ExistsRes {
     }
 }
 
-// 核心修改点：vote 现在可以顺畅地使用 .await
 async fn vote(app: Arc<CacheCatApp>, req: VoteRequest<TypeConfig>) -> VoteResponse<TypeConfig> {
     // openraft 的 vote 是异步的
     app.raft.vote(req).await.expect("Raft vote failed")
+}
+async fn append_entries(app: Arc<CacheCatApp>, req: AppendEntriesRequest<TypeConfig>) {
+    app.raft
+        .append_entries(req)
+        .await
+        .expect("Raft append_entries failed");
+}
+
+//InstallFullSnapshotReq 把openraft自带的俩个参数包裹在一起了
+async fn install_full_snapshot(app: Arc<CacheCatApp>, req: InstallFullSnapshotReq) {
+    let mut snapshot_data_bytes: Vec<u8> = Vec::new();
+    let sp = Cursor::new(snapshot_data_bytes);
+    let snapshot = Snapshot {
+        meta: req.snapshot_meta,
+        snapshot: sp,
+    };
+    app.raft
+        .install_full_snapshot(req.vote, snapshot)
+        .await
+        .expect("Raft install_snapshot failed");
 }

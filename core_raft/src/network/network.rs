@@ -1,5 +1,6 @@
 use crate::network::raft::TypeConfig;
 use crate::server::client::client::RpcClient;
+use crate::server::handler::model::InstallFullSnapshotReq;
 use openraft::alias::VoteOf;
 use openraft::error::{RPCError, ReplicationClosed, StreamingError};
 use openraft::network::RPCOption;
@@ -48,18 +49,14 @@ impl TcpNetwork {
     }
 }
 
-//openraft会自动调用这个方法
+//openraft会自动调用这个方法，这里只需要实现网络层的rpc调用
 impl RaftNetworkV2<TypeConfig> for TcpNetwork {
     async fn append_entries(
         &mut self,
         rpc: AppendEntriesRequest<TypeConfig>,
         _option: RPCOption,
     ) -> Result<AppendEntriesResponse<TypeConfig>, RPCError<TypeConfig>> {
-        let a = rpc.vote.leader_id.node_id;
-        let b = rpc.vote.leader_id.term;
-        let c = rpc.vote.committed;
-        let vec = rpc.entries;
-        todo!()
+        self.client.call(7, rpc).await.unwrap()
     }
 
     async fn vote(
@@ -67,16 +64,22 @@ impl RaftNetworkV2<TypeConfig> for TcpNetwork {
         rpc: VoteRequest<TypeConfig>,
         option: RPCOption,
     ) -> Result<VoteResponse<TypeConfig>, RPCError<TypeConfig>> {
-        self.client.call(1, rpc).await.unwrap()
+        self.client.call(6, rpc).await.unwrap()
     }
     // 只是一个标识，并不真正进行快照
     async fn full_snapshot(
         &mut self,
         vote: VoteOf<TypeConfig>,
-        snapshot: Snapshot<TypeConfig>,
+        mut snapshot: Snapshot<TypeConfig>,
         cancel: impl Future<Output = ReplicationClosed> + OptionalSend + 'static,
         option: RPCOption,
     ) -> Result<SnapshotResponse<TypeConfig>, StreamingError<TypeConfig>> {
-        todo!()
+        let data = snapshot.snapshot.into_inner();
+        let req = InstallFullSnapshotReq {
+            vote,
+            snapshot_meta: snapshot.meta,
+            snapshot: data,
+        };
+        self.client.call(8, req).await.unwrap()
     }
 }
