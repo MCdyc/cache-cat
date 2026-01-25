@@ -1,32 +1,28 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use fory_core::Fory;
+use bincode2;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use server::share::model::{
     DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, PrintTestReq, PrintTestRes, SetReq,
-    SetRes, fory_init,
+    SetRes,
 };
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+
 // =======================
-// 模拟 share::model
+// RPC Client
 // =======================
 
 pub struct RpcClient {
     stream: TcpStream,
-    fory: Arc<Fory>,
     next_request_id: u32,
 }
 
 impl RpcClient {
     pub async fn connect(addr: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let stream = TcpStream::connect(addr).await?;
-
-        let fory = fory_init()?;
         Ok(Self {
             stream,
-            fory,
             next_request_id: 1,
         })
     }
@@ -37,31 +33,31 @@ impl RpcClient {
         req: Req,
     ) -> Result<Res, Box<dyn std::error::Error>>
     where
-        Req: fory_core::Serializer,
-        Res: fory_core::Serializer + fory_core::ForyDefault,
+        Req: Serialize,
+        Res: DeserializeOwned,
     {
         let request_id = self.next_request_id;
         self.next_request_id += 1;
 
         // ---------- 序列化请求 ----------
-        let payload = self.fory.serialize(&req)?;
+        let payload: Vec<u8> = bincode2::serialize(&req)?;
         let length = (4 + 4 + payload.len()) as u32;
 
         let mut buf = BytesMut::with_capacity(12 + payload.len());
-        buf.put_u32(length); // frame length
-        buf.put_u32(request_id); // request id
-        buf.put_u32(func_id); // func id
+        buf.put_u32(length);        // frame length
+        buf.put_u32(request_id);    // request id
+        buf.put_u32(func_id);       // func id
         buf.extend_from_slice(&payload);
 
         // ---------- 发送 ----------
         self.stream.write_all(&buf).await?;
 
-        // ---------- 接收响应头 ----------
+        // ---------- 读取响应长度 ----------
         let mut len_buf = [0u8; 4];
         self.stream.read_exact(&mut len_buf).await?;
         let resp_len = u32::from_be_bytes(len_buf) as usize;
 
-        // ---------- 接收响应体 ----------
+        // ---------- 读取响应体 ----------
         let mut resp_buf = BytesMut::with_capacity(resp_len);
         resp_buf.resize(resp_len, 0);
         self.stream.read_exact(&mut resp_buf).await?;
@@ -74,7 +70,7 @@ impl RpcClient {
             return Err("request_id mismatch".into());
         }
 
-        let res: Res = self.fory.deserialize(resp_buf.as_ref())?;
+        let res: Res = bincode2::deserialize(resp_buf.as_ref())?;
         Ok(res)
     }
 }
@@ -87,29 +83,18 @@ impl RpcClient {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = RpcClient::connect("127.0.0.1:8080").await?;
 
-    // let res2: SetRes = client
-    //     .call(
-    //         2,
-    //         SetReq {
-    //             key: "key".to_string(),
-    //             value: Vec::from("value".to_string()),
-    //             ex_time: 1000000,
-    //         },
-    //     )
-    //     .await?;
-    let res2: SetRes = client
+    let _res: SetRes = client
         .call(
             2,
             SetReq {
                 key: "key".to_string(),
                 value: Vec::from("val11111ue".to_string()),
-                ex_time: 10000,
+                ex_time: 10_000,
             },
         )
         .await?;
-    // thread::sleep(Duration::from_secs(2));
-    //
-    // let res3: GetRes = client
+
+    // let res: GetRes = client
     //     .call(
     //         3,
     //         GetReq {
@@ -117,37 +102,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //         },
     //     )
     //     .await?;
-    // match res3 {
-    //     GetRes {
-    //         value: Some(arc_vec),
-    //     } => {
-    //         // 使用 from_utf8_lossy 处理无效的 UTF-8 序列
+    //
+    // match res.value {
+    //     Some(arc_vec) => {
     //         let s = String::from_utf8_lossy(&arc_vec);
     //         println!("{}", s);
     //     }
-    //     GetRes { value: None } => {
-    //         println!("No value");
-    //     }
+    //     None => println!("No value"),
     // }
-    // let res4: DelRes = client
-    //     .call(
-    //         4,
-    //         DelReq {
-    //             key: "key".to_string(),
-    //         },
-    //     )
-    //     .await?;
-    // println!("{}", res4.num);
-
-    // let res5: ExistsRes = client
-    //     .call(
-    //         5,
-    //         ExistsReq {
-    //             key: "key".to_string(),
-    //         },
-    //     )
-    //     .await?;
-    // println!("{}", res5.num);
 
     Ok(())
 }

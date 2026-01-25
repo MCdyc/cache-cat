@@ -4,7 +4,9 @@ use crate::share::model::{
     SetRes,
 };
 use bytes::Bytes;
-use fory_core::Fory;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use bincode2;
 use std::sync::Arc;
 
 pub type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
@@ -15,22 +17,28 @@ pub static HANDLER_TABLE: &[HandlerEntry] = &[
     (4, || Box::new(RpcMethod { func: del })),
     (5, || Box::new(RpcMethod { func: exists })),
 ];
+
 pub trait RpcHandler: Send + Sync {
-    fn call(&self, fory: &Fory, data: Bytes) -> Bytes;
+    fn call(&self, data: Bytes) -> Bytes;
 }
+
 pub struct RpcMethod<Req, Res> {
     func: fn(Req) -> Res,
 }
 
 impl<Req, Res> RpcHandler for RpcMethod<Req, Res>
 where
-    Req: Send + 'static + fory::ForyDefault + fory::Serializer,
-    Res: Send + 'static + fory::Serializer,
+    Req: Send + 'static + DeserializeOwned,
+    Res: Send + 'static + Serialize,
 {
-    fn call(&self, fory: &Fory, data: Bytes) -> Bytes {
-        let req: Req = fory.deserialize(data.as_ref()).unwrap();
+    fn call(&self, data: Bytes) -> Bytes {
+        // 反序列化请求
+        let req: Req = bincode2::deserialize(data.as_ref()).unwrap();
+        // 调用业务函数
         let res = (self.func)(req);
-        fory.serialize(&res).unwrap().into()
+        // 序列化响应为 Vec<u8> 然后转换为 Bytes
+        let encoded: Vec<u8> = bincode2::serialize(&res).unwrap();
+        encoded.into()
     }
 }
 
@@ -52,7 +60,7 @@ fn set(req: SetReq) -> SetRes {
 fn get(req: GetReq) -> GetRes {
     let cache = get_cache();
     let a = cache.get(&req.key);
-    //为避免空指针，返回Option
+    // 为避免空指针，返回Option
     GetRes {
         value: a.map(|v| v.data.clone()),
     }
@@ -65,6 +73,7 @@ fn del(req: DelReq) -> DelRes {
         Some(_) => DelRes { num: 1 },
     }
 }
+
 fn exists(req: ExistsReq) -> ExistsRes {
     let cache = get_cache();
     if cache.contains_key(&req.key) {

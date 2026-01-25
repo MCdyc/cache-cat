@@ -1,13 +1,10 @@
 use crate::core::config::{get_config, init_config};
 use crate::core::moka::init_cache;
 use crate::handler::request_handler::hand;
-use crate::share::model::fory_init;
 use bytes::{Buf, Bytes, BytesMut};
-use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::UnboundedSender;
 
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_config("./server/config.yml")?;
@@ -16,7 +13,6 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("127.0.0.1:{}", config.port);
     let listener = TcpListener::bind(addr).await?;
     println!("Listening on: {}", listener.local_addr()?);
-    let fory = fory_init()?;
 
     loop {
         let Ok((socket, addr)) = listener.accept().await else {
@@ -26,7 +22,6 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("接收到来自 {} 的新连接", addr);
 
         let (reader, writer) = socket.into_split();
-        let fory = Arc::clone(&fory);
         // 创建一个 channel 用于写数据
         let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
 
@@ -40,6 +35,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         });
+
         // 读任务：处理客户端请求
         tokio::spawn(async move {
             let mut reader = reader;
@@ -61,11 +57,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 let data_packet = buffer.split_to(data_length as usize);
-                let fory = Arc::clone(&fory);
                 let tx = tx.clone();
                 // 处理请求任务
                 tokio::spawn(async move {
-                    match hand(tx, data_packet.freeze(), fory).await {
+                    match hand(tx, data_packet.freeze()).await {
                         Ok(_) => {}
                         Err(_) => {
                             eprintln!("处理请求失败 {}", addr);
@@ -76,8 +71,7 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 }
+
 trait Animal {
     fn speak(&self);
 }
-
-
