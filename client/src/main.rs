@@ -1,5 +1,5 @@
 use client::client::RpcClient;
-use server::share::model::{SetReq, SetRes};
+use server::share::model::{GetReq, GetRes, SetReq, SetRes};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,6 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //         },
     //     )
     //     .await?;
+
     let res2: SetRes = client
         .call(
             2,
@@ -25,5 +26,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         )
         .await?;
+
+    let res3: GetRes = client
+        .call(
+            3,
+            GetReq {
+                key: "key".to_string(),
+            },
+        )
+        .await?;
+    match res3 {
+        GetRes {
+            value: Some(arc_vec),
+        } => {
+            // 使用 from_utf8_lossy 处理无效的 UTF-8 序列
+            let s = String::from_utf8_lossy(&arc_vec);
+            println!("{}", s);
+        }
+        GetRes { value: None } => {
+            println!("No value");
+        }
+    }
     Ok(())
+
 }
