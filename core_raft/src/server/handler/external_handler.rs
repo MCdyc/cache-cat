@@ -1,3 +1,5 @@
+use crate::network::model::Request;
+use crate::network::raft_rocksdb::{CacheCatApp, TypeConfig};
 use crate::server::handler::model::{
     DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, InstallFullSnapshotReq, PrintTestReq,
     PrintTestRes, SetReq, SetRes,
@@ -6,19 +8,20 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use openraft::Snapshot;
 use openraft::raft::{
-    AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest, InstallSnapshotResponse,
-    SnapshotResponse, VoteRequest, VoteResponse,
+    AppendEntriesRequest, AppendEntriesResponse, ClientWriteResponse, InstallSnapshotRequest,
+    InstallSnapshotResponse, SnapshotResponse, VoteRequest, VoteResponse,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::io::Cursor;
 use std::sync::Arc;
-use crate::network::raft_rocksdb::{CacheCatApp, TypeConfig};
 
 pub type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
 
 pub static HANDLER_TABLE: &[HandlerEntry] = &[
     (1, || Box::new(RpcMethod { func: print_test })),
+    (2, || Box::new(RpcMethod { func: write })),
+    (3, || Box::new(RpcMethod { func: read })),
     (6, || Box::new(RpcMethod { func: vote })),
     (7, || {
         Box::new(RpcMethod {
@@ -42,7 +45,7 @@ pub trait RpcHandler: Send + Sync {
 // 这里使用泛型 F 来适配异步函数
 pub struct RpcMethod<Req, Res, Fut>
 where
-    Fut: std::future::Future<Output = Res> + Send,
+    Fut: Future<Output = Res> + Send,
 {
     // 注意：Rust 的纯函数指针 fn 不能直接是 async 的
     // 我们这里让 func 返回一个 Future
@@ -54,7 +57,7 @@ impl<Req, Res, Fut> RpcHandler for RpcMethod<Req, Res, Fut>
 where
     Req: Send + 'static + DeserializeOwned,
     Res: Send + 'static + Serialize,
-    Fut: std::future::Future<Output = Res> + Send + 'static,
+    Fut: Future<Output = Res> + Send + 'static,
 {
     async fn call(&self, app: Arc<CacheCatApp>, data: Bytes) -> Bytes {
         // 反序列化
@@ -72,6 +75,17 @@ where
 async fn print_test(_app: Arc<CacheCatApp>, d: PrintTestReq) -> PrintTestRes {
     println!("{}", d.message);
     PrintTestRes { message: d.message }
+}
+
+async fn write(app: Arc<CacheCatApp>, req: Request) -> ClientWriteResponse<TypeConfig> {
+    let res: ClientWriteResponse<TypeConfig> =
+        app.raft.client_write(req).await.expect("Raft write failed");
+    return res;
+}
+async fn read(app: Arc<CacheCatApp>, req: String) -> Option<String> {
+    let kvs = app.key_values.lock().await;
+    let value = kvs.get(&req);
+    value.map(|v| v.to_string())
 }
 
 async fn vote(app: Arc<CacheCatApp>, req: VoteRequest<TypeConfig>) -> VoteResponse<TypeConfig> {
