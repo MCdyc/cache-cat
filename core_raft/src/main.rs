@@ -1,5 +1,5 @@
 use core_raft::network;
-use core_raft::network::raft::TypeConfig;
+use core_raft::network::raft_rocksdb::TypeConfig;
 use openraft::AsyncRuntime;
 use openraft::alias::AsyncRuntimeOf;
 use std::thread;
@@ -8,6 +8,9 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let d1 = tempfile::TempDir::new()?;
+    let d2 = tempfile::TempDir::new()?;
+    let d3 = tempfile::TempDir::new()?;
     // Setup the logger
     tracing_subscriber::fmt()
         .with_target(true)
@@ -18,27 +21,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let _h1 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(1);
-        let x = rt.block_on(network::raft::start_raft_app(
+        let x = rt.block_on(network::raft_rocksdb::start_raft_app(
             1,
+            d1.path(),
             String::from("127.0.0.1:3001"),
         ));
     });
     let _h2 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(1);
-        let x = rt.block_on(network::raft::start_raft_app(
+        let x = rt.block_on(network::raft_rocksdb::start_raft_app(
             2,
+            d2.path(),
             String::from("127.0.0.1:3002"),
         ));
     });
     let _h3 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(1);
-        let x = rt.block_on(network::raft::start_raft_app(
+        let x = rt.block_on(network::raft_rocksdb::start_raft_app(
             3,
+            d3.path(),
             String::from("127.0.0.1:3003"),
         ));
     });
     thread::sleep(Duration::from_secs(2));
-
 
     thread::sleep(Duration::from_secs(20000));
     Ok(())

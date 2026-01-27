@@ -1,4 +1,3 @@
-use crate::network::raft::{CacheCatApp, TypeConfig};
 use crate::server::handler::model::{
     DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, InstallFullSnapshotReq, PrintTestReq,
     PrintTestRes, SetReq, SetRes,
@@ -14,6 +13,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::io::Cursor;
 use std::sync::Arc;
+use crate::network::raft_rocksdb::{CacheCatApp, TypeConfig};
 
 pub type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
 

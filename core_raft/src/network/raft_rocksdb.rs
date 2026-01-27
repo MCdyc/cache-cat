@@ -1,9 +1,11 @@
 use crate::network::model::{Request, Response};
 use crate::network::network::NetworkFactory;
 use crate::server::handler::rpc;
+use crate::store::rocks_store::new_storage;
 use openraft::{BasicNode, Config};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Cursor;
+use std::path::Path;
 use std::sync::{Arc, LazyLock};
 
 openraft::declare_raft_types!(
@@ -14,11 +16,10 @@ openraft::declare_raft_types!(
         Entry = openraft::Entry<TypeConfig>,
         SnapshotData = Cursor<Vec<u8>>,
 );
-pub type Raft = openraft::Raft<TypeConfig>;
 //实现是纯内存的暂时
-pub type LogStore = crate::store::log::LogStore;
-pub type StateMachineStore = crate::store::state_machine::StateMachineStore<TypeConfig>;
-
+pub type LogStore = crate::store::rocks_log_store::RocksLogStore<TypeConfig>;
+pub type StateMachineStore = crate::store::rocks_store::StateMachineStore;
+pub type Raft = openraft::Raft<TypeConfig>;
 static MAP: LazyLock<HashMap<u64, Vec<String>>> = LazyLock::new(|| {
     let mut map: HashMap<u64, Vec<String>> = HashMap::new();
     map.insert(
@@ -35,7 +36,10 @@ static MAP: LazyLock<HashMap<u64, Vec<String>>> = LazyLock::new(|| {
     );
     return map;
 });
-pub async fn start_raft_app(node_id: u64, addr: String) -> std::io::Result<()> {
+pub async fn start_raft_app<P>(node_id: u64, dir: P, addr: String) -> std::io::Result<()>
+where
+    P: AsRef<Path>,
+{
     let config = Arc::new(Config {
         heartbeat_interval: 250,
         election_timeout_min: 299,
@@ -43,8 +47,7 @@ pub async fn start_raft_app(node_id: u64, addr: String) -> std::io::Result<()> {
         ..Default::default()
     });
 
-    let log_store = LogStore::default();
-    let state_machine_store = StateMachineStore::default();
+    let (log_store, state_machine_store) = new_storage(&dir).await;
     let network = NetworkFactory {};
 
     let raft = openraft::Raft::new(

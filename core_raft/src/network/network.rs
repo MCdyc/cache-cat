@@ -1,4 +1,3 @@
-use crate::network::raft::TypeConfig;
 use crate::server::client::client::RpcClient;
 use crate::server::handler::model::{InstallFullSnapshotReq, PrintTestReq, PrintTestRes};
 use openraft::alias::VoteOf;
@@ -12,6 +11,7 @@ use openraft::{
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use crate::network::raft_rocksdb::TypeConfig;
 
 pub struct NetworkFactory {}
 impl RaftNetworkFactory<TypeConfig> for NetworkFactory {

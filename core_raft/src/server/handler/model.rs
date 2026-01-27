@@ -1,10 +1,10 @@
-use crate::network::raft::TypeConfig;
 use openraft::alias::VoteOf;
 use openraft::{Snapshot, SnapshotMeta};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io::Cursor;
 use std::sync::Arc;
+use crate::network::raft_rocksdb::TypeConfig;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct PrintTestReq {
