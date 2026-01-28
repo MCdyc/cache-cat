@@ -74,7 +74,6 @@ where
 // --- 业务函数全部改为 async ---
 
 async fn print_test(_app: Arc<CacheCatApp>, d: PrintTestReq) -> PrintTestRes {
-    println!("{}", d.message);
     PrintTestRes { message: d.message }
 }
 
