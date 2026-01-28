@@ -1,4 +1,4 @@
-use std::time::Instant;
+use crate::network::raft_rocksdb::TypeConfig;
 use crate::server::client::client::RpcClient;
 use crate::server::handler::model::{InstallFullSnapshotReq, PrintTestReq, PrintTestRes};
 use openraft::alias::VoteOf;
@@ -12,7 +12,7 @@ use openraft::{
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use crate::network::raft_rocksdb::TypeConfig;
+use std::time::Instant;
 
 pub struct NetworkFactory {}
 impl RaftNetworkFactory<TypeConfig> for NetworkFactory {
@@ -52,6 +52,7 @@ impl TcpNetwork {
 
 //openraft会自动调用这个方法，这里只需要实现网络层的rpc调用
 impl RaftNetworkV2<TypeConfig> for TcpNetwork {
+    //只有主节点会调用这个方法，朱姐带你发起心跳时也会调用这个方法
     async fn append_entries(
         &mut self,
         rpc: AppendEntriesRequest<TypeConfig>,
@@ -59,7 +60,7 @@ impl RaftNetworkV2<TypeConfig> for TcpNetwork {
     ) -> Result<AppendEntriesResponse<TypeConfig>, RPCError<TypeConfig>> {
         let start = Instant::now();
         let res: AppendEntriesResponse<TypeConfig> = self.client.call(7, rpc).await.unwrap();
-        println!("append_entries: {} 微秒", start.elapsed().as_micros());
+        // tracing::info!("append_entries: {} 微秒", start.elapsed().as_micros());
         Ok(res)
     }
 
@@ -85,7 +86,7 @@ impl RaftNetworkV2<TypeConfig> for TcpNetwork {
         &mut self,
         vote: VoteOf<TypeConfig>,
         mut snapshot: Snapshot<TypeConfig>,
-        cancel: impl Future<Output=ReplicationClosed> + OptionalSend + 'static,
+        cancel: impl Future<Output = ReplicationClosed> + OptionalSend + 'static,
         option: RPCOption,
     ) -> Result<SnapshotResponse<TypeConfig>, StreamingError<TypeConfig>> {
         let data = snapshot.snapshot.into_inner();

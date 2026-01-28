@@ -1,10 +1,3 @@
-use std::error::Error;
-use std::fmt::Debug;
-use std::io;
-use std::marker::PhantomData;
-use std::ops::RangeBounds;
-use std::sync::Arc;
-use std::time::Instant;
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -23,21 +16,32 @@ use openraft::type_config::TypeConfigExt;
 use rocksdb::ColumnFamily;
 use rocksdb::DB;
 use rocksdb::Direction;
+use std::error::Error;
+use std::fmt::Debug;
+use std::io;
+use std::marker::PhantomData;
+use std::ops::RangeBounds;
+use std::sync::Arc;
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct RocksLogStore<C>
-where C: RaftTypeConfig
+where
+    C: RaftTypeConfig,
 {
     db: Arc<DB>,
     _p: PhantomData<C>,
 }
 
 impl<C> RocksLogStore<C>
-where C: RaftTypeConfig
+where
+    C: RaftTypeConfig,
 {
     pub fn new(db: Arc<DB>) -> Self {
-        db.cf_handle("meta").expect("column family `meta` not found");
-        db.cf_handle("logs").expect("column family `logs` not found");
+        db.cf_handle("meta")
+            .expect("column family `meta` not found");
+        db.cf_handle("logs")
+            .expect("column family `logs` not found");
 
         Self {
             db,
@@ -57,29 +61,37 @@ where C: RaftTypeConfig
     ///
     /// It returns `None` if the store does not have such a metadata stored.
     fn get_meta<M: StoreMeta<C>>(&self) -> Result<Option<M::Value>, io::Error> {
-        let bytes = self.db.get_cf(self.cf_meta(), M::KEY).map_err(|e| io::Error::other(e.to_string()))?;
+        let bytes = self
+            .db
+            .get_cf(self.cf_meta(), M::KEY)
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         let Some(bytes) = bytes else {
             return Ok(None);
         };
 
-        let t = bincode2::deserialize(&bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let t = bincode2::deserialize(&bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         Ok(Some(t))
     }
 
     /// Save a store metadata.
     fn put_meta<M: StoreMeta<C>>(&self, value: &M::Value) -> Result<(), io::Error> {
-        let bin_value = bincode2::serialize(value).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let bin_value = bincode2::serialize(value)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-        self.db.put_cf(self.cf_meta(), M::KEY, bin_value).map_err(|e| io::Error::other(e.to_string()))?;
+        self.db
+            .put_cf(self.cf_meta(), M::KEY, bin_value)
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         Ok(())
     }
 }
 
 impl<C> RaftLogReader<C> for RocksLogStore<C>
-where C: RaftTypeConfig
+where
+    C: RaftTypeConfig,
 {
     async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + OptionalSend>(
         &mut self,
@@ -93,7 +105,10 @@ where C: RaftTypeConfig
 
         let mut res = Vec::new();
 
-        let it = self.db.iterator_cf(self.cf_logs(), rocksdb::IteratorMode::From(&start, Direction::Forward));
+        let it = self.db.iterator_cf(
+            self.cf_logs(),
+            rocksdb::IteratorMode::From(&start, Direction::Forward),
+        );
         for item_res in it {
             let (id, val) = item_res.map_err(read_logs_err)?;
 
@@ -117,18 +132,23 @@ where C: RaftTypeConfig
 }
 
 impl<C> RaftLogStorage<C> for RocksLogStore<C>
-where C: RaftTypeConfig
+where
+    C: RaftTypeConfig,
 {
     type LogReader = Self;
 
     async fn get_log_state(&mut self) -> Result<LogState<C>, io::Error> {
-        let last = self.db.iterator_cf(self.cf_logs(), rocksdb::IteratorMode::End).next();
+        let last = self
+            .db
+            .iterator_cf(self.cf_logs(), rocksdb::IteratorMode::End)
+            .next();
 
         let last_log_id = match last {
             None => None,
             Some(res) => {
                 let (_log_index, entry_bytes) = res.map_err(read_logs_err)?;
-                let ent = bincode2::deserialize::<EntryOf<C>>(&entry_bytes).map_err(read_logs_err)?;
+                let ent =
+                    bincode2::deserialize::<EntryOf<C>>(&entry_bytes).map_err(read_logs_err)?;
                 Some(ent.log_id())
             }
         };
@@ -155,14 +175,20 @@ where C: RaftTypeConfig
 
         // Vote must be persisted to disk before returning.
         let db = self.db.clone();
-        C::spawn_blocking(move || db.flush_wal(true).map_err(|e| io::Error::other(e.to_string()))).await??;
+        C::spawn_blocking(move || {
+            db.flush_wal(true)
+                .map_err(|e| io::Error::other(e.to_string()))
+        })
+        .await??;
 
         Ok(())
     }
 
     //心跳不会走到这里
     async fn append<I>(&mut self, entries: I, callback: IOFlushed<C>) -> Result<(), io::Error>
-    where I: IntoIterator<Item = EntryOf<C>> + Send {
+    where
+        I: IntoIterator<Item = EntryOf<C>> + Send,
+    {
         let start = Instant::now();
 
         for entry in entries {
@@ -171,7 +197,8 @@ where C: RaftTypeConfig
                 .put_cf(
                     self.cf_logs(),
                     id,
-                    bincode2::serialize(&entry).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                    bincode2::serialize(&entry)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
                 )
                 .map_err(|e| io::Error::other(e.to_string()))?;
         }
@@ -186,14 +213,14 @@ where C: RaftTypeConfig
             callback.io_completed(res);
         });
         let elapsed = start.elapsed();
-        println!("append elapsed: {:?}", elapsed);
+        tracing::info!("rocksdb append elapsed: {:?}", elapsed);
 
         // Return now, and the callback will be invoked later when IO is done.
         Ok(())
     }
 
     async fn truncate_after(&mut self, last_log_id: Option<LogIdOf<C>>) -> Result<(), io::Error> {
-        tracing::debug!("truncate_after: ({:?}, +oo)", last_log_id);
+        tracing::info!("truncate_after: ({:?}, +oo)", last_log_id);
 
         let start_index = match last_log_id {
             Some(log_id) => log_id.index() + 1,
@@ -202,14 +229,16 @@ where C: RaftTypeConfig
 
         let from = id_to_bin(start_index);
         let to = id_to_bin(u64::MAX);
-        self.db.delete_range_cf(self.cf_logs(), &from, &to).map_err(|e| io::Error::other(e.to_string()))?;
+        self.db
+            .delete_range_cf(self.cf_logs(), &from, &to)
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         // Truncating does not need to be persisted.
         Ok(())
     }
 
     async fn purge(&mut self, log_id: LogIdOf<C>) -> Result<(), io::Error> {
-        tracing::debug!("delete_log: [0, {:?}]", log_id);
+        tracing::info!("delete_log: [0, {:?}]", log_id);
 
         // Write the last-purged log id before purging the logs.
         // The logs at and before last-purged log id will be ignored by openraft.
@@ -218,7 +247,9 @@ where C: RaftTypeConfig
 
         let from = id_to_bin(0);
         let to = id_to_bin(log_id.index() + 1);
-        self.db.delete_range_cf(self.cf_logs(), &from, &to).map_err(|e| io::Error::other(e.to_string()))?;
+        self.db
+            .delete_range_cf(self.cf_logs(), &from, &to)
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         // Purging does not need to be persistent.
         Ok(())
@@ -236,7 +267,8 @@ mod meta {
 
     /// Defines metadata key and value
     pub(crate) trait StoreMeta<C>
-    where C: RaftTypeConfig
+    where
+        C: RaftTypeConfig,
     {
         /// The key used to store in rocksdb
         const KEY: &'static str;
@@ -249,13 +281,15 @@ mod meta {
     pub(crate) struct Vote {}
 
     impl<C> StoreMeta<C> for LastPurged
-    where C: RaftTypeConfig
+    where
+        C: RaftTypeConfig,
     {
         const KEY: &'static str = "last_purged_log_id";
         type Value = LogIdOf<C>;
     }
     impl<C> StoreMeta<C> for Vote
-    where C: RaftTypeConfig
+    where
+        C: RaftTypeConfig,
     {
         const KEY: &'static str = "vote";
         type Value = VoteOf<C>;

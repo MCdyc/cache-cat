@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::io::Cursor;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub type HandlerEntry = (u32, fn() -> Box<dyn RpcHandler>);
 
@@ -92,14 +93,23 @@ async fn vote(app: Arc<CacheCatApp>, req: VoteRequest<TypeConfig>) -> VoteRespon
     // openraft 的 vote 是异步的
     app.raft.vote(req).await.expect("Raft vote failed")
 }
+
+//理论上只有从节点会被调用这个方法
 async fn append_entries(
     app: Arc<CacheCatApp>,
     req: AppendEntriesRequest<TypeConfig>,
 ) -> AppendEntriesResponse<TypeConfig> {
-    app.raft
+    let start = Instant::now();
+
+    let res = app
+        .raft
         .append_entries(req)
         .await
-        .expect("Raft append_entries failed")
+        .expect("Raft append_entries failed");
+    let elapsed = start.elapsed();
+    tracing::info!("append 内部: {:?} 节点：{:?}", elapsed, app.id);
+
+    res
 }
 
 //InstallFullSnapshotReq 把openraft自带的俩个参数包裹在一起了

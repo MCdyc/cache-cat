@@ -2,15 +2,20 @@ use core_raft::network;
 use core_raft::network::raft_rocksdb::TypeConfig;
 use openraft::AsyncRuntime;
 use openraft::alias::AsyncRuntimeOf;
-use std::thread;
+use std::{fs, thread};
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let d1 = tempfile::TempDir::new()?;
-    let d2 = tempfile::TempDir::new()?;
-    let d3 = tempfile::TempDir::new()?;
+    let base = r"E:\tmp\raft\rocks";
+
+    // 确保父目录存在（很重要）
+    fs::create_dir_all(base)?;
+
+    let d1 = tempfile::TempDir::new_in(base)?;
+    let d2 = tempfile::TempDir::new_in(base)?;
+    let d3 = tempfile::TempDir::new_in(base)?;
     // Setup the logger
     tracing_subscriber::fmt()
         .with_target(true)
@@ -18,6 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_level(true)
         .with_ansi(false)
         .with_env_filter(EnvFilter::from_default_env())
+        .with_max_level(tracing::Level::WARN)
         .init();
     let _h1 = thread::spawn(move || {
         let mut rt = AsyncRuntimeOf::<TypeConfig>::new(1);

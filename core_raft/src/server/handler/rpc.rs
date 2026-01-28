@@ -2,6 +2,7 @@ use crate::network::raft_rocksdb::CacheCatApp;
 use crate::server::core::config::{get_config, init_config};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::sync::{Arc, LazyLock};
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -64,12 +65,15 @@ pub async fn start_server(app: Arc<CacheCatApp>) -> std::io::Result<()> {
                 // 处理请求任务
                 let app = app.clone();
                 tokio::spawn(async move {
+                    let start = Instant::now();
                     match hand(app, tx, data_packet.freeze()).await {
                         Ok(_) => {}
                         Err(_) => {
                             eprintln!("处理请求失败 {}", addr);
                         }
                     }
+                    tracing::info!("rpc处理用时: {} 微秒", start.elapsed().as_micros());
+
                 });
             }
         });

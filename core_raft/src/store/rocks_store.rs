@@ -203,14 +203,14 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                 }
             }
             Ok(())
-        }.await;
+        }
+        .await;
 
         let elapsed = start_time.elapsed();
-        println!("完成执行 apply 操作，耗时: {:?} 毫秒", elapsed.as_micros());
+        println!("完成执行 apply 操作，耗时: {:?} 微秒", elapsed.as_micros());
 
         result
     }
-
 
     async fn get_snapshot_builder(&mut self) -> Self::SnapshotBuilder {
         self.snapshot_idx += 1;
