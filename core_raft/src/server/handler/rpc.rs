@@ -7,8 +7,8 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::server::handler::external_handler::HANDLER_TABLE;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use futures::{SinkExt, StreamExt};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 pub async fn start_server(app: Arc<CacheCatApp>) -> std::io::Result<()> {
     // 初始化配置（保留原有逻辑）

@@ -20,7 +20,7 @@ openraft::declare_raft_types!(
         
 );
 //实现是纯内存的暂时
-pub type LogStore = crate::store::rocks_log_store::RocksLogStore<TypeConfig>;
+pub type LogStore = crate::store::rocks_log_store::RocksLogStore;
 pub type StateMachineStore = crate::store::rocks_store::StateMachineStore;
 pub type Raft = openraft::Raft<TypeConfig>;
 pub async fn start_raft_app<P>(node_id: u64, dir: P, addr: String) -> std::io::Result<()>

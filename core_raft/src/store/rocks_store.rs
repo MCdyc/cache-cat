@@ -119,12 +119,10 @@ impl StateMachineStore {
     async fn update_state_machine_(&mut self, snapshot: StoredSnapshot) -> Result<(), io::Error> {
         let kvs: BTreeMap<String, String> = bincode2::deserialize(&snapshot.data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
         self.data.last_applied_log_id = snapshot.meta.last_log_id;
         self.data.last_membership = snapshot.meta.last_membership.clone();
         let mut x = self.data.kvs.lock().await;
         *x = kvs;
-
         Ok(())
     }
 
@@ -249,7 +247,7 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
 
 pub(crate) async fn new_storage<P: AsRef<Path>>(
     db_path: P,
-) -> (RocksLogStore<TypeConfig>, StateMachineStore) {
+) -> (RocksLogStore, StateMachineStore) {
     let mut db_opts = Options::default();
     db_opts.create_missing_column_families(true);
     db_opts.create_if_missing(true);

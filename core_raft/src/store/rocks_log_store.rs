@@ -1,3 +1,4 @@
+use crate::network::raft_rocksdb::TypeConfig;
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -25,18 +26,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
-pub struct RocksLogStore<C>
-where
-    C: RaftTypeConfig,
-{
+pub struct RocksLogStore {
     db: Arc<DB>,
-    _p: PhantomData<C>,
+    _p: PhantomData<TypeConfig>,
 }
 
-impl<C> RocksLogStore<C>
-where
-    C: RaftTypeConfig,
-{
+impl RocksLogStore {
     pub fn new(db: Arc<DB>) -> Self {
         db.cf_handle("meta")
             .expect("column family `meta` not found");
@@ -60,7 +55,7 @@ where
     /// Get a store metadata.
     ///
     /// It returns `None` if the store does not have such a metadata stored.
-    fn get_meta<M: StoreMeta<C>>(&self) -> Result<Option<M::Value>, io::Error> {
+    fn get_meta<M: StoreMeta<TypeConfig>>(&self) -> Result<Option<M::Value>, io::Error> {
         let bytes = self
             .db
             .get_cf(self.cf_meta(), M::KEY)
@@ -69,15 +64,13 @@ where
         let Some(bytes) = bytes else {
             return Ok(None);
         };
-
         let t = bincode2::deserialize(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
         Ok(Some(t))
     }
 
     /// Save a store metadata.
-    fn put_meta<M: StoreMeta<C>>(&self, value: &M::Value) -> Result<(), io::Error> {
+    fn put_meta<M: StoreMeta<TypeConfig>>(&self, value: &M::Value) -> Result<(), io::Error> {
         let bin_value = bincode2::serialize(value)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
@@ -89,55 +82,43 @@ where
     }
 }
 
-impl<C> RaftLogReader<C> for RocksLogStore<C>
-where
-    C: RaftTypeConfig,
-{
+impl RaftLogReader<TypeConfig> for RocksLogStore {
     async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + OptionalSend>(
         &mut self,
         range: RB,
-    ) -> Result<Vec<C::Entry>, io::Error> {
+    ) -> Result<Vec<<TypeConfig as RaftTypeConfig>::Entry>, io::Error> {
         let start = match range.start_bound() {
             std::ops::Bound::Included(x) => id_to_bin(*x),
             std::ops::Bound::Excluded(x) => id_to_bin(*x + 1),
             std::ops::Bound::Unbounded => id_to_bin(0),
         };
-
         let mut res = Vec::new();
-
         let it = self.db.iterator_cf(
             self.cf_logs(),
             rocksdb::IteratorMode::From(&start, Direction::Forward),
         );
         for item_res in it {
             let (id, val) = item_res.map_err(read_logs_err)?;
-
             let id = bin_to_id(&id);
             if !range.contains(&id) {
                 break;
             }
-
-            let entry: EntryOf<C> = bincode2::deserialize(&val).map_err(read_logs_err)?;
-
+            let entry: EntryOf<TypeConfig> = bincode2::deserialize(&val).map_err(read_logs_err)?;
             assert_eq!(id, entry.index());
-
             res.push(entry);
         }
         Ok(res)
     }
 
-    async fn read_vote(&mut self) -> Result<Option<VoteOf<C>>, io::Error> {
+    async fn read_vote(&mut self) -> Result<Option<VoteOf<TypeConfig>>, io::Error> {
         self.get_meta::<meta::Vote>()
     }
 }
 
-impl<C> RaftLogStorage<C> for RocksLogStore<C>
-where
-    C: RaftTypeConfig,
-{
+impl RaftLogStorage<TypeConfig> for RocksLogStore {
     type LogReader = Self;
 
-    async fn get_log_state(&mut self) -> Result<LogState<C>, io::Error> {
+    async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, io::Error> {
         let last = self
             .db
             .iterator_cf(self.cf_logs(), rocksdb::IteratorMode::End)
@@ -147,8 +128,8 @@ where
             None => None,
             Some(res) => {
                 let (_log_index, entry_bytes) = res.map_err(read_logs_err)?;
-                let ent =
-                    bincode2::deserialize::<EntryOf<C>>(&entry_bytes).map_err(read_logs_err)?;
+                let ent = bincode2::deserialize::<EntryOf<TypeConfig>>(&entry_bytes)
+                    .map_err(read_logs_err)?;
                 Some(ent.log_id())
             }
         };
@@ -170,27 +151,28 @@ where
         self.clone()
     }
 
-    async fn save_vote(&mut self, vote: &VoteOf<C>) -> Result<(), io::Error> {
+    async fn save_vote(&mut self, vote: &VoteOf<TypeConfig>) -> Result<(), io::Error> {
         self.put_meta::<meta::Vote>(vote)?;
-
         // Vote must be persisted to disk before returning.
         let db = self.db.clone();
-        C::spawn_blocking(move || {
+        TypeConfig::spawn_blocking(move || {
             db.flush_wal(true)
                 .map_err(|e| io::Error::other(e.to_string()))
         })
         .await??;
-
         Ok(())
     }
 
     //心跳不会走到这里
-    async fn append<I>(&mut self, entries: I, callback: IOFlushed<C>) -> Result<(), io::Error>
+    async fn append<I>(
+        &mut self,
+        entries: I,
+        callback: IOFlushed<TypeConfig>,
+    ) -> Result<(), io::Error>
     where
-        I: IntoIterator<Item = EntryOf<C>> + Send,
+        I: IntoIterator<Item = EntryOf<TypeConfig>> + Send,
     {
         let start = Instant::now();
-
         for entry in entries {
             let id = id_to_bin(entry.index());
             self.db
@@ -202,7 +184,6 @@ where
                 )
                 .map_err(|e| io::Error::other(e.to_string()))?;
         }
-
         // 在调用回调函数之前，确保日志已经持久化到磁盘。
         //
         // 但上面的 `pub_cf()` 必须在这个函数中调用，而不能放到另一个任务里。
@@ -219,7 +200,11 @@ where
         Ok(())
     }
 
-    async fn truncate_after(&mut self, last_log_id: Option<LogIdOf<C>>) -> Result<(), io::Error> {
+    // 如果follower的日志与leader的日志不匹配，follower会删除冲突的日志
+    async fn truncate_after(
+        &mut self,
+        last_log_id: Option<LogIdOf<TypeConfig>>,
+    ) -> Result<(), io::Error> {
         tracing::info!("truncate_after: ({:?}, +oo)", last_log_id);
 
         let start_index = match last_log_id {
@@ -232,12 +217,12 @@ where
         self.db
             .delete_range_cf(self.cf_logs(), &from, &to)
             .map_err(|e| io::Error::other(e.to_string()))?;
-
         // Truncating does not need to be persisted.
         Ok(())
     }
 
-    async fn purge(&mut self, log_id: LogIdOf<C>) -> Result<(), io::Error> {
+    //日志压缩
+    async fn purge(&mut self, log_id: LogIdOf<TypeConfig>) -> Result<(), io::Error> {
         tracing::info!("delete_log: [0, {:?}]", log_id);
 
         // Write the last-purged log id before purging the logs.
@@ -247,6 +232,7 @@ where
 
         let from = id_to_bin(0);
         let to = id_to_bin(log_id.index() + 1);
+        //删除指定范围内的所有数据
         self.db
             .delete_range_cf(self.cf_logs(), &from, &to)
             .map_err(|e| io::Error::other(e.to_string()))?;
