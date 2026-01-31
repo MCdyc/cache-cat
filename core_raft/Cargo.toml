@@ -25,3 +25,5 @@ dashmap = "6.1.0"
 
 mimalloc = "0.1.48"
 anyhow = "1.0.100"
+crossbeam-utils = "0.8.21"
+parking_lot = "0.12.5"

@@ -19,7 +19,7 @@ impl RaftNetworkFactory<TypeConfig> for NetworkFactory {
     type Network = TcpNetwork;
     #[tracing::instrument(level = "debug", skip_all)]
     async fn new_client(&mut self, target: u64, node: &BasicNode) -> Self::Network {
-        let client = RpcMultiClient::connect(&*node.addr.clone(), 10)
+        let client = RpcMultiClient::connect(&*node.addr.clone(), 5)
             .await
             .unwrap();
         TcpNetwork {

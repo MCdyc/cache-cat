@@ -97,5 +97,5 @@ pub struct CacheCatApp {
     pub addr: String,
     pub raft: Raft,
     pub config: Arc<Config>,
-    pub key_values: Arc<Mutex<BTreeMap<String, String>>>,
+    pub key_values: Arc<Mutex<HashMap<String, String>>>,
 }
