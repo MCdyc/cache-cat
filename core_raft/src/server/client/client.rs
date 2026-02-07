@@ -4,13 +4,13 @@ use crossbeam_utils::CachePadded;
 use futures::task::AtomicWaker;
 use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::task::{Context, Poll};
 use std::time::Instant;
 use tokio::net::TcpStream;
@@ -60,10 +60,18 @@ impl SlotTable {
 }
 
 // --- RPC 核心实现 ---
-
+#[derive(Default)]
 pub struct RpcMultiClient {
     clients: Vec<RpcClient>,
     next_client: AtomicU32,
+}
+impl Clone for RpcMultiClient {
+    fn clone(&self) -> Self {
+        Self {
+            clients: self.clients.clone(),
+            next_client: AtomicU32::new(0),
+        }
+    }
 }
 
 impl RpcMultiClient {
@@ -125,7 +133,9 @@ impl RpcClient {
         tokio::spawn(async move {
             while let Some(frame_res) = stream.next().await {
                 if let Ok(mut frame) = frame_res {
-                    if frame.len() < 4 { continue; }
+                    if frame.len() < 4 {
+                        continue;
+                    }
 
                     let request_id = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]);
                     let body = frame.split_off(4).freeze();

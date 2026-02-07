@@ -1,5 +1,6 @@
 use crate::network::model::Request;
-use crate::network::raft_rocksdb::{CacheCatApp, TypeConfig};
+use crate::network::node::CacheCatApp;
+use crate::network::raft_rocksdb::TypeConfig;
 use crate::server::handler::model::{
     DelReq, DelRes, ExistsReq, ExistsRes, GetReq, GetRes, InstallFullSnapshotReq, PrintTestReq,
     PrintTestRes, SetReq, SetRes,
@@ -80,10 +81,10 @@ async fn print_test(_app: Arc<CacheCatApp>, d: PrintTestReq) -> PrintTestRes {
 async fn write(app: Arc<CacheCatApp>, req: Request) -> ClientWriteResponse<TypeConfig> {
     let res: ClientWriteResponse<TypeConfig> =
         app.raft.client_write(req).await.expect("Raft write failed");
-    return res;
+    res
 }
 async fn read(app: Arc<CacheCatApp>, req: String) -> Option<String> {
-    let kvs = app.key_values.lock().await;
+    let kvs = app.state_machine.data.kvs.lock().await;
     let value = kvs.get(&req);
     value.map(|v| v.to_string())
 }

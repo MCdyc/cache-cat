@@ -14,12 +14,12 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::time::Instant;
 
+const CONNECT_NUM: u32 = 5;
 pub struct NetworkFactory {}
 impl RaftNetworkFactory<TypeConfig> for NetworkFactory {
     type Network = TcpNetwork;
-    #[tracing::instrument(level = "debug", skip_all)]
     async fn new_client(&mut self, target: u64, node: &BasicNode) -> Self::Network {
-        let client = RpcMultiClient::connect(&*node.addr.clone(), 5)
+        let client = RpcMultiClient::connect(&*node.addr.clone(), CONNECT_NUM)
             .await
             .unwrap();
         TcpNetwork {
@@ -29,7 +29,17 @@ impl RaftNetworkFactory<TypeConfig> for NetworkFactory {
         }
     }
 }
-
+impl NetworkFactory {
+    pub async fn new_tcp(target: u64, node: String) -> TcpNetwork {
+        let client = RpcMultiClient::connect(&*node, CONNECT_NUM).await.unwrap();
+        TcpNetwork {
+            addr: node,
+            client,
+            target,
+        }
+    }
+}
+#[derive(Clone, Default)]
 pub struct TcpNetwork {
     addr: String,
     client: RpcMultiClient,

@@ -1,5 +1,6 @@
 use crate::network::model::{Request, Response};
 use crate::network::network::NetworkFactory;
+use crate::network::node::CacheCatApp;
 use crate::server::handler::model::SetReq;
 use crate::server::handler::rpc;
 use crate::store::rocks_store::new_storage;
@@ -17,7 +18,7 @@ openraft::declare_raft_types!(
         R = Response,
         Entry = openraft::Entry<TypeConfig>,
         SnapshotData = Cursor<Vec<u8>>,
-        
+
 );
 //实现是纯内存的暂时
 pub type LogStore = crate::store::rocks_log_store::RocksLogStore;
@@ -35,7 +36,6 @@ where
     });
 
     let (log_store, state_machine_store) = new_storage(&dir).await;
-    let kvs = state_machine_store.data.kvs.clone();
     let network = NetworkFactory {};
 
     let raft = openraft::Raft::new(
@@ -52,8 +52,8 @@ where
         id: node_id,
         addr: addr.clone(),
         raft,
-        config,
-        key_values: kvs,
+        group_id: 0,
+        state_machine: state_machine_store,
     };
 
     // 正确构建集群成员映射
@@ -91,11 +91,4 @@ where
     // app.raft.client_write(request).await.unwrap();
 
     rpc::start_server(Arc::new(app)).await
-}
-pub struct CacheCatApp {
-    pub id: u64,
-    pub addr: String,
-    pub raft: Raft,
-    pub config: Arc<Config>,
-    pub key_values: Arc<Mutex<HashMap<String, String>>>,
 }
