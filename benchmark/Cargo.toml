@@ -8,8 +8,8 @@ core_raft = { path = "../core_raft" }
 openraft = { git = "https://github.com/databendlabs/openraft", tag = "v0.10.0-alpha.13", features = ["type-alias", "serde"] }
 futures = "0.3.31"
 tracing = "0.1.44"
-serde = "1.0.149"
-serde_json = "1.0.149"
+serde = "1.0.228"
+
 reqwest = "0.13.1"
 tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread", "macros"] }
 fory = "0.14.1"
@@ -17,7 +17,6 @@ fory-derive = "0.14.1"
 fory-core = "0.14.1"
 bincode2 = "2.0.1"
 bytes = "1.0"
-serde_yaml = "0.9.34+deprecated"
 moka = { version = "0.12.12", features = ["sync"] }
 async-trait = "0.1.89"
 tracing-subscriber = { version = "0.3.0", features = ["env-filter"] }

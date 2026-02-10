@@ -23,7 +23,7 @@ async fn test_add() {
                     value: Vec::from(format!("test_value_{}", i)),
                     ex_time: 0,
                 }),
-            )
+            ) 
             .await
             .expect("call failed");
         let elapsed = start.elapsed();
